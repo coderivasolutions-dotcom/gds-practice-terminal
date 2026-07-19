@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GDS Practice Terminal</title>
+<meta name="description" content="Offline Amadeus + Galileo + Sabre GDS command practice simulator. Mock data only." />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #05070a; }
+  body {
+    font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    color: #33ff66;
+    min-height: 100vh;
+    padding: 18px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  .top { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .title { font-size: 20px; letter-spacing: 3px; font-weight: 500; }
+  .subtitle { font-size: 11px; letter-spacing: 1px; }
+  .tabs { display: flex; gap: 6px; }
+  .tab {
+    font-family: inherit; cursor: pointer; background: transparent;
+    padding: 6px 14px; font-size: 12px; letter-spacing: 2px;
+    text-transform: uppercase; font-weight: 500;
+  }
+  .screen {
+    background: #05070a; height: 420px; overflow-y: auto;
+    padding: 12px 14px; font-size: 13.5px;
+  }
+  .line { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+  .line.in { color: #ffffff; }
+  .line.out { opacity: 0.92; }
+  .inputrow { display: flex; align-items: center; border-top: none; padding: 8px 12px; }
+  .prompt { margin-right: 8px; }
+  #cmd {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: #fff; font-family: inherit; font-size: 13.5px; text-transform: uppercase;
+  }
+  #cmd::placeholder { color: currentColor; opacity: 0.6; }
+  .enter {
+    font-family: inherit; border: none; padding: 4px 14px;
+    font-size: 12px; letter-spacing: 1px; cursor: pointer; font-weight: 500;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .chip {
+    font-family: inherit; background: transparent; padding: 4px 10px;
+    font-size: 11px; cursor: pointer; letter-spacing: 0.5px;
+  }
+  .foot { margin-top: 14px; font-size: 11px; line-height: 1.6; }
+  .tab:focus-visible, .chip:focus-visible, #cmd:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="title" id="ttl">GDS·PRACTICE·TERMINAL</div>
+      <div class="subtitle" id="sub">OFFLINE DRILL ENVIRONMENT — NO LIVE SYSTEM CONNECTED — MOCK DATA</div>
+    </div>
+    <div class="tabs">
+      <button class="tab" data-sys="amadeus">AMADEUS</button>
+      <button class="tab" data-sys="galileo">GALILEO</button>
+      <button class="tab" data-sys="sabre">SABRE</button>
+    </div>
+  </div>
+  <div class="screen" id="screen"></div>
+  <div class="inputrow" id="inputrow">
+    <span class="prompt">›</span>
+    <input id="cmd" spellcheck="false" autocapitalize="characters" placeholder="e.g. AN15JULDACDXB" />
+    <button class="enter" id="enterBtn">ENTER</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+"use strict";
+// ============================================================
+//  GDS PRACTICE SIMULATOR  (vanilla JS, no dependencies)
+//  Offline drill for Amadeus + Galileo command syntax.
+//  NOT connected to any live reservation system. All data is mock.
+// ============================================================
+
+var CITIES = {
+  DAC:"DHAKA", DXB:"DUBAI", LON:"LONDON", LHR:"LONDON HEATHROW",
+  JFK:"NEW YORK JFK", SIN:"SINGAPORE", KUL:"KUALA LUMPUR",
+  BKK:"BANGKOK", DOH:"DOHA", IST:"ISTANBUL", CCU:"KOLKATA",
+  DEL:"DELHI", SYD:"SYDNEY", YYZ:"TORONTO", CDG:"PARIS"
+};
+var AIRLINES = ["EK","QR","BG","SQ","TK","BA","MH","TG","EY"];
+
+function pad(s, len){ s=String(s); return s.length>=len ? s.slice(0,len) : s + Array(len-s.length+1).join(" "); }
+function rnd(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function fnum(n){ n=String(n); while(n.length<4) n="0"+n; return n; }
+function two(n){ n=String(n); return n.length<2 ? "0"+n : n; }
+function tstr(h,m){ return two(h)+two(m); }
+
+function genFlights(org,dst){
+  var out=[], count=rnd(4,7), h=6, i, al, fn, dH, dM, dur, aH, aM;
+  for(i=0;i<count;i++){
+    al=AIRLINES[rnd(0,AIRLINES.length-1)];
+    fn=fnum(rnd(1,899));
+    dH=h+rnd(0,2); dM=rnd(0,59);
+    dur=rnd(2,9); aH=(dH+dur)%24; aM=rnd(0,59);
+    h=Math.min(dH+2,22);
+    out.push({ al:al, fn:fn, dep:tstr(dH,dM), arr:tstr(aH,aM),
+      cls:"J9 C9 D4 Y9 B9 M9", org:org, dst:dst,
+      eq:["777","320","788","359","738"][rnd(0,4)] });
+  }
+  return out;
+}
+function reclocGen(){
+  var chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r="", i;
+  for(i=0;i<6;i++) r+=chars[rnd(0,31)];
+  return r;
+}
+
+function interpretAmadeus(cmd, st){
+  var c=cmd.toUpperCase().trim(), lines=[], m, i, f, s, base, tax, seats, cls, line;
+
+  m=c.match(/^AN(\d{1,2}[A-Z]{3})([A-Z]{3})([A-Z]{3})(\/A[A-Z]{2})?$/);
+  if(m){
+    var date=m[1], org=m[2], dst=m[3];
+    if(!CITIES[org]||!CITIES[dst]) return ["UNABLE - CHECK CITY CODES"];
+    lines.push("** AMADEUS AVAILABILITY - AN ** "+org+" "+CITIES[org]+"."+date);
+    var fl=genFlights(org,dst); st.lastFlights=fl;
+    for(i=0;i<fl.length;i++){ f=fl[i];
+      lines.push(pad(i+1,2)+" "+f.al+f.fn+" "+f.cls+"  "+org+" "+dst+" "+f.dep+" "+f.arr+"  E0/"+f.eq); }
+    return lines;
+  }
+  m=c.match(/^SS(\d)([A-Z])(\d+)$/);
+  if(m){
+    seats=m[1]; cls=m[2]; line=parseInt(m[3],10);
+    f=st.lastFlights&&st.lastFlights[line-1];
+    if(!f) return ["NO AVAILABILITY DISPLAYED - USE AN FIRST"];
+    st.segments=st.segments||[]; st.segments.push({al:f.al,fn:f.fn,org:f.org,dst:f.dst,dep:f.dep,arr:f.arr,cls:cls,seats:seats});
+    lines.push("RP/DAC1A0980/");
+    lines.push(" 1  "+f.al+f.fn+" "+cls+" 15JUL "+f.org+f.dst+" HK"+seats+"  "+f.dep+" "+f.arr);
+    return lines;
+  }
+  m=c.match(/^NM\d?([A-Z]+)\/([A-Z ]+)$/);
+  if(m){ st.name=m[1]+"/"+m[2]; return ["RP/DAC1A0980/","  1."+m[1]+"/"+m[2]]; }
+
+  if(/^AP/.test(c)){ st.phone=c.slice(2); return ["  AP "+c.slice(2)]; }
+  if(c==="TKOK"){ st.tk=true; return ["  TK OK"]; }
+
+  if(c==="ET"||c==="ER"){
+    if(!st.name) return ["NO NAME - ADD NM FIRST"];
+    if(!st.segments||!st.segments.length) return ["NO ITINERARY - SELL A SEGMENT FIRST"];
+    st.pnr=reclocGen();
+    lines.push("--- RLR ---");
+    lines.push("RP/DAC1A0980/DAC1A0980   "+st.pnr);
+    lines.push("  1."+st.name);
+    for(i=0;i<st.segments.length;i++){ s=st.segments[i];
+      lines.push("  "+(i+2)+"  "+s.al+s.fn+" "+s.cls+" 15JUL "+s.org+s.dst+" HK"+s.seats+" "+s.dep+" "+s.arr); }
+    lines.push("END OF TRANSACTION COMPLETE - "+st.pnr);
+    return lines;
+  }
+  m=c.match(/^RT([A-Z0-9]{6})$/);
+  if(m){
+    if(st.pnr===m[1]){
+      lines.push("RP/DAC1A0980/   "+st.pnr);
+      lines.push("  1."+st.name);
+      for(i=0;i<st.segments.length;i++){ s=st.segments[i];
+        lines.push("  "+(i+2)+"  "+s.al+s.fn+" "+s.cls+" 15JUL "+s.org+s.dst+" HK"+s.seats+" "+s.dep+" "+s.arr); }
+      return lines;
+    }
+    return ["CHECK RECORD LOCATOR - NOT FOUND IN THIS SESSION"];
+  }
+  if(c==="FXP"||c.indexOf("FQD")===0){
+    if(!st.segments||!st.segments.length) return ["NO ITINERARY TO PRICE"];
+    base=rnd(400,1400); tax=rnd(60,220);
+    return ["FXP","   FARE BASIS   ROE  BSR","   "+st.segments[0].cls+"RT  1.000",
+      "   FARE   USD  "+base+".00","   TAX    USD  "+tax+".00","   TOTAL  USD  "+(base+tax)+".00"];
+  }
+  if(c==="HELP"||c==="HE") return null;
+  return ["ENTRY NOT RECOGNIZED - CHECK AMADEUS FORMAT (TYPE HELP)"];
+}
+
+function interpretGalileo(cmd, st){
+  var c=cmd.toUpperCase().trim(), lines=[], m, i, f, s, base, tax, seats, cls, line;
+
+  m=c.match(/^A(\d{1,2}[A-Z]{3})([A-Z]{3})([A-Z]{3})(\/[A-Z]{2})?$/);
+  if(m){
+    var date=m[1], org=m[2], dst=m[3];
+    if(!CITIES[org]||!CITIES[dst]) return ["CHECK CITY/AIRPORT CODE"];
+    lines.push(date+" "+org+dst);
+    var fl=genFlights(org,dst); st.lastFlights=fl;
+    for(i=0;i<fl.length;i++){ f=fl[i];
+      lines.push(pad(i+1,2)+" "+f.al+f.fn+"  "+f.cls+"  "+org+dst+" "+f.dep+" "+f.arr+"  "+f.eq); }
+    return lines;
+  }
+  m=c.match(/^0(\d)([A-Z])(\d+)$/);
+  if(m){
+    seats=m[1]; cls=m[2]; line=parseInt(m[3],10);
+    f=st.lastFlights&&st.lastFlights[line-1];
+    if(!f) return ["NO AVAILABILITY - ENTER A) FIRST"];
+    st.segments=st.segments||[]; st.segments.push({al:f.al,fn:f.fn,org:f.org,dst:f.dst,dep:f.dep,arr:f.arr,cls:cls,seats:seats});
+    return [" 1. "+f.al+f.fn+" "+cls+" 15JUL "+f.org+f.dst+" SS"+seats+"  "+f.dep+" "+f.arr];
+  }
+  m=c.match(/^N[.:]([A-Z]+)\/([A-Z ]+)$/);
+  if(m){ st.name=m[1]+"/"+m[2]; return [" 1.1"+m[1]+"/"+m[2]]; }
+
+  if(/^P[.:]/.test(c)){ st.phone=c.slice(2); return [" "+c]; }
+  if(/^T[.:]/.test(c)){ st.tk=true; return [" TICKETING: "+c.slice(2)]; }
+  if(/^R[.:]/.test(c)){ st.rcvd=c.slice(2); return [" RCVD: "+c.slice(2)]; }
+
+  if(c==="E"||c==="ER"){
+    if(!st.name) return ["NEED NAME - ENTER N. FIRST"];
+    if(!st.segments||!st.segments.length) return ["NEED SEGMENT - SELL FIRST"];
+    st.pnr=reclocGen();
+    lines.push(st.pnr);
+    lines.push(" 1.1"+st.name);
+    for(i=0;i<st.segments.length;i++){ s=st.segments[i];
+      lines.push(" "+(i+1)+". "+s.al+s.fn+" "+s.cls+" 15JUL "+s.org+s.dst+" HK"+s.seats+" "+s.dep+" "+s.arr); }
+    lines.push(">*** END TRANSACTION *** "+st.pnr);
+    return lines;
+  }
+  m=c.match(/^\*([A-Z0-9]{6})$/);
+  if(m){
+    if(st.pnr===m[1]){
+      lines.push(st.pnr);
+      lines.push(" 1.1"+st.name);
+      for(i=0;i<st.segments.length;i++){ s=st.segments[i];
+        lines.push(" "+(i+1)+". "+s.al+s.fn+" "+s.cls+" 15JUL "+s.org+s.dst+" HK"+s.seats+" "+s.dep+" "+s.arr); }
+      return lines;
+    }
+    return ["RECORD LOCATOR NOT FOUND IN THIS SESSION"];
+  }
+  if(c==="FQ"||c==="FQBB"){
+    if(!st.segments||!st.segments.length) return ["NO ITINERARY TO PRICE"];
+    base=rnd(400,1400); tax=rnd(60,220);
+    return ["FQ"," BASE FARE   USD "+base+".00"," TAXES       USD "+tax+".00"," TOTAL       USD "+(base+tax)+".00"];
+  }
+  if(c==="HELP") return null;
+  return ["FORMAT NOT RECOGNIZED - CHECK GALILEO ENTRY (TYPE HELP)"];
+}
+
+function interpretSabre(cmd, st){
+  var c=cmd.toUpperCase().trim(), lines=[], m, i, f, s, base, tax, seats, cls, line;
+
+  // Availability: 115JULDACDXB   (1 + ddMMM + citypair), optional airline -EK
+  m=c.match(/^1(\d{1,2}[A-Z]{3})([A-Z]{3})([A-Z]{3})(-[A-Z]{2})?$/);
+  if(m){
+    var date=m[1], org=m[2], dst=m[3];
+    if(!CITIES[org]||!CITIES[dst]) return ["INVALID CITY PAIR"];
+    lines.push(date+" "+org+dst);
+    var fl=genFlights(org,dst); st.lastFlights=fl;
+    for(i=0;i<fl.length;i++){ f=fl[i];
+      lines.push(pad(i+1,2)+" "+f.al+" "+f.fn+" "+f.cls+" "+org+dst+" "+f.dep+" "+f.arr+"  "+f.eq); }
+    return lines;
+  }
+  // Sell: 01Y1  (0 + seats + class + line)
+  m=c.match(/^0(\d)([A-Z])(\d+)$/);
+  if(m){
+    seats=m[1]; cls=m[2]; line=parseInt(m[3],10);
+    f=st.lastFlights&&st.lastFlights[line-1];
+    if(!f) return ["NO AVAILABILITY - ENTRY 1 FIRST"];
+    st.segments=st.segments||[]; st.segments.push({al:f.al,fn:f.fn,org:f.org,dst:f.dst,dep:f.dep,arr:f.arr,cls:cls,seats:seats});
+    return [" 1 "+f.al+" "+f.fn+" "+cls+" 15JUL "+f.org+f.dst+" SS"+seats+" "+f.dep+" "+f.arr];
+  }
+  // Name: -SMITH/JOHN MR
+  m=c.match(/^-([A-Z]+)\/([A-Z ]+)$/);
+  if(m){ st.name=m[1]+"/"+m[2]; return [" 1.1"+m[1]+"/"+m[2]]; }
+
+  // Phone: 9DAC12345678-A  (9 + text)
+  if(/^9/.test(c)){ st.phone=c.slice(1); return [" PHONE "+c.slice(1)]; }
+  // Ticketing: 7TAW/  (starts with 7)
+  if(/^7/.test(c)){ st.tk=true; return [" TKT: "+c.slice(1)]; }
+  // Received-from: 6AGENT
+  if(/^6/.test(c)){ st.rcvd=c.slice(1); return [" RCVD "+c.slice(1)]; }
+
+  // End: E  or  ER  (Sabre uses 'E' with received-from, or *R to display)
+  if(c==="E"||c==="ER"){
+    if(!st.name) return ["NEED NAME FIELD - ENTRY - FIRST"];
+    if(!st.segments||!st.segments.length) return ["NEED AIR SEGMENT - SELL FIRST"];
+    st.pnr=reclocGen();
+    lines.push(st.pnr);
+    lines.push(" 1.1"+st.name);
+    for(i=0;i<st.segments.length;i++){ s=st.segments[i];
+      lines.push(" "+(i+1)+" "+s.al+" "+s.fn+" "+s.cls+" 15JUL "+s.org+s.dst+" HK"+s.seats+" "+s.dep+" "+s.arr); }
+    lines.push("*** END OF RECORD *** "+st.pnr);
+    return lines;
+  }
+  // Retrieve: *xxxxxx
+  m=c.match(/^\*([A-Z0-9]{6})$/);
+  if(m){
+    if(st.pnr===m[1]){
+      lines.push(st.pnr);
+      lines.push(" 1.1"+st.name);
+      for(i=0;i<st.segments.length;i++){ s=st.segments[i];
+        lines.push(" "+(i+1)+" "+s.al+" "+s.fn+" "+s.cls+" 15JUL "+s.org+s.dst+" HK"+s.seats+" "+s.dep+" "+s.arr); }
+      return lines;
+    }
+    return ["RECORD LOCATOR NOT FOUND IN THIS SESSION"];
+  }
+  // Pricing: WP  or  WPNC
+  if(c==="WP"||c==="WPNC"){
+    if(!st.segments||!st.segments.length) return ["NO ITINERARY TO PRICE"];
+    base=rnd(400,1400); tax=rnd(60,220);
+    return ["WP"," BASE FARE   USD "+base+".00"," TAXES       USD "+tax+".00"," TOTAL       USD "+(base+tax)+".00"];
+  }
+  if(c==="HELP") return null;
+  return ["FORMAT NOT RECOGNIZED - CHECK SABRE ENTRY (TYPE HELP)"];
+}
+
+var HELP = {
+  amadeus: [
+    "=== AMADEUS QUICK REFERENCE ===",
+    "AN15JULDACDXB        availability DAC>DXB on 15JUL",
+    "AN15JULDACDXB/AEK    same, filtered to Emirates",
+    "SS1Y2                sell 1 seat, class Y, line 2",
+    "NM1SMITH/JOHN MR     add passenger name",
+    "AP DAC 12345678      add contact phone",
+    "TKOK                 ticketing arrangement OK",
+    "ET  (or ER)          end transaction / create PNR",
+    "RTxxxxxx             retrieve PNR by record locator",
+    "FXP                  price the itinerary",
+    "",
+    "Typical flow: AN > SS > NM > AP > TKOK > ET"
+  ],
+  galileo: [
+    "=== GALILEO QUICK REFERENCE ===",
+    "A15JULDACDXB         availability DAC>DXB on 15JUL",
+    "A15JULDACDXB/EK      same, filtered to Emirates",
+    "01Y2                 sell 1 seat, class Y, line 2",
+    "N.SMITH/JOHNMR       add passenger name",
+    "P.DAC12345678        add phone contact",
+    "T.TAU                ticketing field",
+    "R.AGENT              received-from field",
+    "E  (or ER)           end transaction / create PNR",
+    "*xxxxxx              retrieve PNR by record locator",
+    "FQ                   price the itinerary",
+    "",
+    "Typical flow: A > 0 (sell) > N. > P. > T. > R. > E"
+  ],
+  sabre: [
+    "=== SABRE QUICK REFERENCE ===",
+    "115JULDACDXB         availability DAC>DXB on 15JUL",
+    "115JULDACDXB-EK      same, filtered to Emirates",
+    "01Y1                 sell 1 seat, class Y, line 1",
+    "-SMITH/JOHN MR       add passenger name",
+    "9DAC12345678-A       add phone contact",
+    "7TAW/                ticketing field",
+    "6AGENT               received-from field",
+    "E  (or ER)           end transaction / create PNR",
+    "*xxxxxx              retrieve PNR by record locator",
+    "WP                   price the itinerary",
+    "",
+    "Typical flow: 1 > 0 (sell) > - (name) > 9 > 7 > 6 > E"
+  ]
+};
+
+var THEME = {
+  amadeus: { amber:"#33ff66", dim:"#1c7a38" },
+  galileo: { amber:"#ffb000", dim:"#8a5f00" },
+  sabre:   { amber:"#38bdf8", dim:"#1d5a78" }
+};
+var QUICK = {
+  amadeus: ["AN15JULDACDXB","SS1Y2","NM1SMITH/JOHN MR","TKOK","ET","FXP","HELP"],
+  galileo: ["A15JULDACDXB","01Y2","N.SMITH/JOHNMR","T.TAU","R.AGT","E","FQ","HELP"],
+  sabre:   ["115JULDACDXB","01Y1","-SMITH/JOHN MR","7TAW/","6AGT","E","WP","HELP"]
+};
+
+// --- App state -----------------------------------------------------------
+var system = "amadeus";
+var histories = {
+  amadeus: [{type:"sys", text:"AMADEUS TRAINING TERMINAL — MOCK DATA ONLY. TYPE HELP."}],
+  galileo: [{type:"sys", text:"GALILEO TRAINING TERMINAL — MOCK DATA ONLY. TYPE HELP."}],
+  sabre:   [{type:"sys", text:"SABRE TRAINING TERMINAL — MOCK DATA ONLY. TYPE HELP."}]
+};
+var sessions = { amadeus:{}, galileo:{}, sabre:{} };
+var cmdStacks = { amadeus:[], galileo:[], sabre:[] };
+var stackIdx = -1;
+
+// --- DOM refs ------------------------------------------------------------
+var screen = document.getElementById("screen");
+var input = document.getElementById("cmd");
+var chipsEl = document.getElementById("chips");
+var footEl = document.getElementById("foot");
+var inputrow = document.getElementById("inputrow");
+var ttl = document.getElementById("ttl");
+var sub = document.getElementById("sub");
+var enterBtn = document.getElementById("enterBtn");
+var tabs = document.querySelectorAll(".tab");
+
+function theme(){ return THEME[system]; }
+
+function applyTheme(){
+  var t = theme();
+  document.body.style.color = t.amber;
+  ttl.style.color = t.amber; sub.style.color = t.dim;
+  screen.style.border = "1px solid "+t.dim;
+  screen.style.boxShadow = "inset 0 0 60px "+t.amber+"11";
+  inputrow.style.border = "1px solid "+t.dim;
+  inputrow.style.borderTop = "none";
+  document.querySelector(".prompt").style.color = t.amber;
+  enterBtn.style.background = t.amber; enterBtn.style.color = "#05070a";
+  footEl.style.color = t.dim;
+  input.placeholder = system==="amadeus" ? "e.g. AN15JULDACDXB" : (system==="galileo" ? "e.g. A15JULDACDXB" : "e.g. 115JULDACDXB");
+
+  tabs.forEach(function(tab){
+    var s = tab.getAttribute("data-sys");
+    var st = THEME[s];
+    tab.style.border = "1px solid "+st.amber;
+    if(s===system){ tab.style.background = st.amber; tab.style.color = "#05070a"; }
+    else { tab.style.background = "transparent"; tab.style.color = st.amber; }
+  });
+}
+
+function renderScreen(){
+  var t = theme();
+  screen.innerHTML = "";
+  histories[system].forEach(function(l){
+    var div = document.createElement("div");
+    div.className = "line " + l.type;
+    if(l.type==="in"){ div.textContent = "› " + l.text; }
+    else { div.textContent = l.text; div.style.color = (l.type==="sys") ? t.dim : t.amber; }
+    screen.appendChild(div);
+  });
+  screen.scrollTop = screen.scrollHeight;
+}
+
+function renderChips(){
+  var t = theme();
+  chipsEl.innerHTML = "";
+  QUICK[system].forEach(function(q){
+    var b = document.createElement("button");
+    b.className = "chip"; b.textContent = q;
+    b.style.border = "1px solid "+t.dim; b.style.color = t.dim;
+    b.onmouseenter = function(){ b.style.background = t.amber+"22"; };
+    b.onmouseleave = function(){ b.style.background = "transparent"; };
+    b.onclick = function(){ input.value = q; input.focus(); };
+    chipsEl.appendChild(b);
+  });
+}
+
+function renderFoot(){
+  footEl.textContent =
+    "↑/↓ recalls previous entries · TYPE HELP for command reference · RESET clears the PNR workspace · CLEAR wipes the screen. City codes available: "
+    + Object.keys(CITIES).join(" ") + ".";
+}
+
+function run(raw){
+  var cmd = raw.trim();
+  if(!cmd) return;
+  var up = cmd.toUpperCase();
+  histories[system].push({type:"in", text:cmd});
+
+  if(up==="CLEAR"||up==="MD"){ histories[system]=[]; input.value=""; renderScreen(); return; }
+  if(up==="RESET"){
+    sessions[system]={};
+    histories[system].push({type:"sys", text:"SESSION CLEARED — PNR WORKSPACE EMPTY."});
+    input.value=""; renderScreen(); return;
+  }
+
+  var interp = system==="amadeus" ? interpretAmadeus : (system==="galileo" ? interpretGalileo : interpretSabre);
+  var result = interp(cmd, sessions[system]);
+  var out = (result===null) ? HELP[system] : result;
+  out.forEach(function(l){ histories[system].push({type:"out", text:l}); });
+
+  cmdStacks[system].push(cmd);
+  stackIdx = -1;
+  input.value = "";
+  renderScreen();
+}
+
+// --- Events --------------------------------------------------------------
+enterBtn.onclick = function(){ run(input.value); };
+
+input.addEventListener("keydown", function(e){
+  if(e.key==="Enter"){ run(input.value); return; }
+  var stack = cmdStacks[system];
+  if(e.key==="ArrowUp"){
+    e.preventDefault();
+    if(!stack.length) return;
+    stackIdx = (stackIdx<0) ? stack.length-1 : Math.max(0, stackIdx-1);
+    input.value = stack[stackIdx];
+  }
+  if(e.key==="ArrowDown"){
+    e.preventDefault();
+    if(stackIdx<0) return;
+    stackIdx++;
+    if(stackIdx>=stack.length){ stackIdx=-1; input.value=""; }
+    else { input.value = stack[stackIdx]; }
+  }
+});
+
+tabs.forEach(function(tab){
+  tab.onclick = function(){
+    system = tab.getAttribute("data-sys");
+    stackIdx = -1;
+    applyTheme(); renderScreen(); renderChips();
+    input.focus();
+  };
+});
+
+// --- Init ----------------------------------------------------------------
+applyTheme();
+renderScreen();
+renderChips();
+renderFoot();
+input.focus();
+</script>
+</body>
+</html>
