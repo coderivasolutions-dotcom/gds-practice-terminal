@@ -50,9 +50,48 @@
   }
   .foot { margin-top: 14px; font-size: 11px; line-height: 1.6; }
   .tab:focus-visible, .chip:focus-visible, #cmd:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+  /* --- Password gate --- */
+  #gate {
+    position: fixed; inset: 0; background: #05070a; z-index: 999;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .gatebox { width: 100%; max-width: 420px; text-align: center; }
+  .gatebox .gtitle { font-size: 20px; letter-spacing: 3px; color: #33ff66; font-weight: 500; }
+  .gatebox .gsub { font-size: 11px; letter-spacing: 1px; color: #1c7a38; margin-top: 6px; }
+  .gatebox .glabel { font-size: 12px; color: #1c7a38; margin: 26px 0 8px; letter-spacing: 1px; }
+  .gaterow { display: flex; border: 1px solid #1c7a38; }
+  #gatepass {
+    flex: 1; background: transparent; border: none; outline: none; color: #fff;
+    font-family: inherit; font-size: 14px; padding: 10px 12px; letter-spacing: 2px;
+  }
+  #gatepass::placeholder { color: #1c7a38; letter-spacing: 1px; }
+  #gatebtn {
+    font-family: inherit; background: #33ff66; color: #05070a; border: none;
+    padding: 0 18px; font-size: 12px; letter-spacing: 2px; cursor: pointer; font-weight: 500;
+  }
+  #gateerr { color: #ff5555; font-size: 11px; margin-top: 10px; min-height: 14px; letter-spacing: 0.5px; }
+  #gatebtn:focus-visible, #gatepass:focus-visible { outline: 2px solid #33ff66; outline-offset: 2px; }
+  #app { display: none; }
 </style>
 </head>
 <body>
+
+<!-- ===== PASSWORD GATE ===== -->
+<div id="gate">
+  <div class="gatebox">
+    <div class="gtitle">GDS·PRACTICE·TERMINAL</div>
+    <div class="gsub">SKILL BRIDGE ACADEMY — ENROLLED STUDENTS ONLY</div>
+    <div class="glabel">ENTER ACCESS CODE</div>
+    <div class="gaterow">
+      <input id="gatepass" type="password" placeholder="ACCESS CODE" autocomplete="off" spellcheck="false" />
+      <button id="gatebtn">UNLOCK</button>
+    </div>
+    <div id="gateerr"></div>
+  </div>
+</div>
+
+<div id="app">
 <div class="wrap">
   <div class="top">
     <div>
@@ -74,6 +113,58 @@
   <div class="chips" id="chips"></div>
   <div class="foot" id="foot"></div>
 </div>
+</div><!-- /#app -->
+
+<!-- ===== GATE LOGIC ===== -->
+<script>
+(function(){
+  "use strict";
+  // ┌─────────────────────────────────────────────────────────┐
+  // │  CHANGE YOUR ACCESS CODE HERE. Give this code only to    │
+  // │  enrolled students. Note: this is a light client-side    │
+  // │  gate — good for keeping casual visitors out, not for    │
+  // │  protecting anything truly sensitive.                    │
+  // └─────────────────────────────────────────────────────────┘
+  var ACCESS_CODE = "SKILLBRIDGE2026";
+
+  var gate   = document.getElementById("gate");
+  var app    = document.getElementById("app");
+  var pass   = document.getElementById("gatepass");
+  var btn    = document.getElementById("gatebtn");
+  var err    = document.getElementById("gateerr");
+
+  // Remember unlock for this browser so students aren't re-prompted every visit.
+  try {
+    if (window.sessionStorage && sessionStorage.getItem("gds_unlocked") === "1") {
+      unlock();
+    }
+  } catch(e){}
+
+  function unlock(){
+    gate.style.display = "none";
+    app.style.display = "block";
+    try { sessionStorage.setItem("gds_unlocked", "1"); } catch(e){}
+    // hand off focus to the command input if it exists yet
+    var cmd = document.getElementById("cmd");
+    if (cmd) cmd.focus();
+  }
+
+  function tryUnlock(){
+    if (pass.value.trim().toUpperCase() === ACCESS_CODE.toUpperCase()) {
+      err.textContent = "";
+      unlock();
+    } else {
+      err.textContent = "INCORRECT CODE — CHECK WITH YOUR INSTRUCTOR";
+      pass.value = "";
+      pass.focus();
+    }
+  }
+
+  btn.addEventListener("click", tryUnlock);
+  pass.addEventListener("keydown", function(e){ if (e.key === "Enter") tryUnlock(); });
+  pass.focus();
+})();
+</script>
 
 <script>
 "use strict";
